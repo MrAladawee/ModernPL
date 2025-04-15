@@ -1,108 +1,70 @@
 package main
 
 import (
-	"reflect"
+	"fmt"
+	"math"
 	"testing"
 )
 
-func TestTokenize(t *testing.T) {
+const epsilon = 1e-9
+
+func TestCalculate(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected []string
+		expr    string
+		want    float64
+		wantErr error
 	}{
-		{"3+4", []string{"3", "+", "4"}},
-		{"(1 + 2) * 3", []string{"(", "1", "+", "2", ")", "*", "3"}},
-		{"10 / (5 - 3)", []string{"10", "/", "(", "5", "-", "3", ")"}},
-		{" 3 + 4.5 ", []string{"3", "+", "4.5"}},
+		// Базовые операции
+		{"2 + 3", 5, nil},
+		{"10 - 4", 6, nil},
+		{"6 * 7", 42, nil},
+		{"20 / 5", 4, nil},
+		{"3 + 4 * 2", 11, nil},
+		{"(3 + 4) * 2", 14, nil},
+		{"10 / 3", 3.3333333333333335, nil},
+
+		// Унарные минусы
+		{"-5 + 3", -2, nil},
+		{"3 * (-2)", -6, nil},
+		{"-(-4)", 4, nil},
+		{"-3 + (-4)", -7, nil},
+		{"-0", 0, nil},
+
+		// Скобки
+		{"(2 + 3) * (4 - 1)", 15, nil},
+		{"((15 / (7 - 2)) - 3) * 2", 0, nil},
+		{"1 + (2 * (3 + (4 / 2)))", 11, nil},
+
+		// Ошибки
+		{"10 / 0", 0, fmt.Errorf("division by zero")},
+		{"2 + a", 0, fmt.Errorf("unknown character: a")},
+		{"3.14.15", 0, fmt.Errorf("invalid number at position 4")},
+		{"(2 + 3", 0, fmt.Errorf("mismatched parentheses")},
+
+		// Числа с плавающей точкой
+		{"2.5 + 3.5", 6, nil},
+		{"10.2 / 2", 5.1, nil},
+		{"0.1 + 0.2", 0.3, nil},
 	}
 
 	for _, tc := range tests {
-		result := tokenize(tc.input)
-		if !reflect.DeepEqual(result, tc.expected) {
-			t.Errorf("tokenize(%q) = %v, ожидалось %v", tc.input, result, tc.expected)
-		}
-	}
-}
+		got, err := Calculate(tc.expr)
 
-func TestInfixToPostfix(t *testing.T) {
-	tests := []struct {
-		input    []string
-		expected []string
-		hasError bool
-	}{
-		{[]string{"3", "+", "4"}, []string{"3", "4", "+"}, false},
-		{[]string{"(", "1", "+", "2", ")", "*", "3"}, []string{"1", "2", "+", "3", "*"}, false},
-		{[]string{"10", "/", "(", "5", "-", "3", ")"}, []string{"10", "5", "3", "-", "/"}, false},
-		{[]string{"(", "3", "+", "4"}, nil, true}, // Несовпадение скобок
-		{[]string{"3", "+", "@"}, nil, true},      // Неизвестный символ
-	}
-
-	for _, tt := range tests {
-		result, err := infixToPostfix(tt.input)
-		if (err != nil) != tt.hasError {
-			t.Errorf("infixToPostfix(%v) error = %v, expected error: %v", tt.input, err, tt.hasError)
-		}
-		if err == nil && !reflect.DeepEqual(result, tt.expected) {
-			t.Errorf("infixToPostfix(%v) = %v, expected %v", tt.input, result, tt.expected)
-		}
-	}
-}
-
-func TestEvaluatePostfix(t *testing.T) {
-	tests := []struct {
-		input    []string
-		expected float64
-		hasError bool
-	}{
-		{[]string{"3", "4", "+"}, 7.0, false},
-		{[]string{"10", "5", "/", "2", "*"}, 4.0, false},
-		{[]string{"2", "3", "+", "4", "*"}, 20.0, false},
-		{[]string{"3", "0", "/"}, 0, true}, // Деление на ноль
-		{[]string{"3", "+"}, 0, true},      // Недостаточно операндов
-	}
-
-	for _, tt := range tests {
-		result, err := evaluatePostfix(tt.input)
-		if (err != nil) != tt.hasError {
-			t.Errorf("evaluatePostfix(%v) error = %v, expected error: %v", tt.input, err, tt.hasError)
-		}
-		if err == nil && result != tt.expected {
-			t.Errorf("evaluatePostfix(%v) = %v, expected %v", tt.input, result, tt.expected)
-		}
-	}
-}
-
-func TestFullEvaluation(t *testing.T) {
-	tests := []struct {
-		expr     string
-		expected float64
-		hasError bool
-	}{
-		{"3 + 4", 7.0, false},
-		{"(1 + 2) * 3", 9.0, false},
-		{"10 / (5 - 3)", 5.0, false},
-		{"3 + (4 * 2 - ( 3 * 4 ) / 2) - 7 / 2", 1.5, false},
-		{"3 +", 0, true},         // Ошибка
-		{"(3 + 2", 0, true},      // Скобки
-		{"3 / 0", 0, true},       // Деление на ноль
-		{"3 + unknown", 0, true}, // Неизвестный токен
-	}
-
-	for _, tt := range tests {
-		tokens := tokenize(tt.expr)
-		postfix, err := infixToPostfix(tokens)
-		if err != nil && !tt.hasError {
-			t.Errorf("infixToPostfix(%q) unexpected error: %v", tt.expr, err)
+		// Проверка ошибок
+		if (err != nil) != (tc.wantErr != nil) {
+			t.Errorf("%s: error = %v, wantErr %v", tc.expr, err, tc.wantErr)
 			continue
 		}
-		if err == nil {
-			result, err := evaluatePostfix(postfix)
-			if (err != nil) != tt.hasError {
-				t.Errorf("evaluatePostfix(%q) error = %v, expected error: %v", tt.expr, err, tt.hasError)
-			}
-			if err == nil && result != tt.expected {
-				t.Errorf("evaluate(%q) = %v, expected %v", tt.expr, result, tt.expected)
-			}
+
+		// Сравнение текста ошибок
+		if err != nil && tc.wantErr != nil && err.Error() != tc.wantErr.Error() {
+			t.Errorf("%s: error message = %v, want %v", tc.expr, err.Error(), tc.wantErr.Error())
+			continue
+		}
+
+		// Проверка числовых результатов
+		if err == nil && math.Abs(got-tc.want) > epsilon {
+			t.Errorf("%s: got %v, want %v", tc.expr, got, tc.want)
 		}
 	}
 }
