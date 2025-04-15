@@ -6,4 +6,4 @@
 
 4 task in Matrix
 
-5 task in TBot (future)
+5 task in TBot
